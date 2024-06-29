@@ -1,0 +1,1 @@
+python ./scripts/rest_client.py --config user_data/config_future_test_GRID.json status

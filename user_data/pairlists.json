@@ -1,0 +1,23 @@
+{"pairlists": [
+    {
+        "method": "MarketCapPairList",
+        "number_assets": 100,
+        "max_rank": 200,
+        "refresh_period": 86400
+    },
+    {
+        "method": "RangeStabilityFilter",
+        "lookback_days": 10,
+        "min_rate_of_change": 0.05,
+        "max_rate_of_change": 0.99,
+        "refresh_period": 86400
+    },
+    {
+        "method": "VolatilityFilter",
+        "lookback_days": 10,
+        "min_volatility": 0.05,
+        "max_volatility": 1,
+        "refresh_period": 86400
+    },
+    {"method": "StaticPairList"}
+]}
