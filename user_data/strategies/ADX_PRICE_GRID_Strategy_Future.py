@@ -197,7 +197,7 @@ class GRIDDMIPRICEStrategyFuture(IStrategy):
                 try:
                     # This returns oppsite order amount size
                     # stake_amount = last_oppsite_order.safe_amount * current_exit_rate / trade.leverage
-                    return last_oppsite_order.safe_amount, f'Decrese Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
+                    return -last_oppsite_order.safe_amount, f'Decrese Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
                 except Exception as exception:
                     return None
                 
@@ -208,7 +208,7 @@ class GRIDDMIPRICEStrategyFuture(IStrategy):
                 try:
                     # This returns oppsite order amount size
                     # stake_amount = last_oppsite_order.safe_amount * current_exit_rate / trade.leverage
-                    return last_oppsite_order.safe_amount, f'Decrese Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
+                    return -last_oppsite_order.safe_amount, f'Decrese Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
                 except Exception as exception:
                     return None
                     
