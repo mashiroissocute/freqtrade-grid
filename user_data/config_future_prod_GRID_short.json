@@ -1,11 +1,11 @@
 {
-    "max_open_trades": 10,
+    "max_open_trades": 5,
     "stake_currency": "USDT",
     "stake_amount": "unlimited",
     "tradable_balance_ratio": 0.98,
     "fiat_display_currency": "USD",
     "dry_run": false,
-    "available_capital": 1000,
+    "available_capital": 500,
     "db_url": "sqlite:///ADXPRICEGRIDStrategyFuture.prodtion.sqlite",
     "cancel_open_orders_on_exit": false,
     "trading_mode": "futures",
@@ -33,8 +33,8 @@
     },
     "exchange": {
         "name": "binance",
-        "key": "iUbi1zhsvzIWxRMg1IF1cl8Xg02Sei6kTUi6Fmu4sDKK5Z52E7aO3xvgzSyi3trU",
-        "secret": "JVWBIcQQwadyPwDNFXQuanfANH5HnHgTh4OoJlKE4GQh2SSBnjo5jILV7NYZ3rRD",
+        "key": "u8K76KmPldLTMkIidnMwyDAMJnaTnQxFUIvx9AMWOjDU7znvmpd3MzHNwRCaXTqV",
+        "secret": "2iKRJ899mv4FDR1gm4nWqkQXSVIWAPUAS0JPuCZH9Ebb6Yx2SOodihBWZ8yqpeQt",
         "ccxt_config": {},
         "ccxt_async_config": {},
         "pair_whitelist": [
@@ -189,8 +189,7 @@
             "BB/USDT:USDT",
             "ONDO/USDT:USDT",
             "TNSR/USDT:USDT",
-            "TON/USDT:USDT",
-            "BOME/USDT:USDT"
+            "TON/USDT:USDT"
         ],
         "pair_blacklist": [
         ]

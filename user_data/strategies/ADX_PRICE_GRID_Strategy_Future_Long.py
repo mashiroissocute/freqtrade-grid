@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 
-class GRIDDMIPRICEStrategyFuture(IStrategy):
+class GRIDDMIPRICEStrategyFutureLong(IStrategy):
 
     INTERFACE_VERSION: int = 3
     can_short = True
@@ -56,8 +56,7 @@ class GRIDDMIPRICEStrategyFuture(IStrategy):
     
     adxWindow = IntParameter(7, 21, default=14, space="buy")
     adxThr = IntParameter(15, 35, default=25, space="buy")
-    emaThrLong = IntParameter(5, 55, default=12, space="buy")
-    emaThrShort = IntParameter(5, 55, default=24, space="buy")
+    emaThr = IntParameter(5, 55, default=12, space="buy")
     upGridPercent = 1.02
     downGridPercent = 0.98
     
@@ -79,8 +78,18 @@ class GRIDDMIPRICEStrategyFuture(IStrategy):
         informative = self.dp.get_pair_dataframe(pair=metadata['pair'], timeframe=self.inf_tf)
         informative['plus_di'] = ta.PLUS_DI(informative,adxWindow)
         informative['minus_di'] = ta.MINUS_DI(informative,adxWindow)
-        informative['emaLong'] = ta.EMA(informative, timeperiod=self.emaThrLong.value)
-        informative['emaShort'] = ta.EMA(informative, timeperiod=self.emaThrShort.value)
+        informative['ema'] = ta.EMA(informative, timeperiod=self.emaThr.value)
+        
+        
+        # n1 = 10
+        # n2 = 21
+        # ap = (dataframe['high'] + dataframe['low'] + dataframe['close']) / 3
+        # esa = ap.ewm(span=n1, min_periods=n1).mean()
+        # d = ap.sub(esa).abs().ewm(span=n1, min_periods=n1).mean()
+        # ci = (ap - esa) / (0.015 * d)
+        # tci = ci.ewm(span=n2, min_periods=n2).mean()
+        # dataframe['wt1'] = tci
+        # dataframe['wt2'] = dataframe['wt1'].rolling(window=4).mean()
 
         dataframe = merge_informative_pair(dataframe, informative, self.timeframe, self.inf_tf, ffill=True)    
 
@@ -94,7 +103,7 @@ class GRIDDMIPRICEStrategyFuture(IStrategy):
         """
         dataframe.loc[
             (
-                (dataframe['close'] < dataframe[f'emaLong_{self.inf_tf}'])
+                (dataframe['close'] < dataframe[f'ema_{self.inf_tf}'])
                 & 
                 (dataframe[f'plus_di_{self.inf_tf}'] > dataframe[f'minus_di_{self.inf_tf}']) & (dataframe[f'plus_di_{self.inf_tf}']>self.adxThr.value)
             ),
@@ -102,9 +111,10 @@ class GRIDDMIPRICEStrategyFuture(IStrategy):
         
         dataframe.loc[
             (
-                (dataframe['close'] > dataframe[f'emaShort_{self.inf_tf}'])
-                & 
-                (dataframe[f'plus_di_{self.inf_tf}'] < dataframe[f'minus_di_{self.inf_tf}']) & (dataframe[f'minus_di_{self.inf_tf}']>self.adxThr.value)
+                # (dataframe['close'] > dataframe[f'ema_{self.inf_tf}'])
+                # & 
+                # (dataframe[f'plus_di_{self.inf_tf}'] < dataframe[f'minus_di_{self.inf_tf}']) & (dataframe[f'minus_di_{self.inf_tf}']>self.adxThr.value)
+                (dataframe['close'] < 0)
             ),
             'enter_short'] = 1
         return dataframe
