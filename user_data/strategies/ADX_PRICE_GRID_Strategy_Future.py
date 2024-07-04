@@ -60,6 +60,8 @@ class GRIDDMIPRICEStrategyFuture(IStrategy):
     emaThrShort = IntParameter(5, 55, default=24, space="buy")
     upGridPercent = 1.02
     downGridPercent = 0.98
+    upStoplossPercent = 1.25
+    downStoplossPercent = 0.75
     
 
     # Optimal timeframe for the strategy
@@ -149,10 +151,22 @@ class GRIDDMIPRICEStrategyFuture(IStrategy):
                               **kwargs
                               ) -> Union[Optional[float], Tuple[Optional[float], Optional[str]]]:
         
-        # ---------------- GRID increse position ---------------
+        vaild_order_list = find_valid_order(trade)
+        if len(vaild_order_list) == 0:
+            return None
+        
+        last_unstoploss_order = vaild_order_list[0]
+        last_unconsumed_order = vaild_order_list[-1]
+        
+        
+        last_grid_order = find_last_orders(trade)
+        if last_grid_order == None:
+            return None
         
         filled_entries = trade.select_filled_orders() # all filled entry
-        last_order_price = filled_entries[-1].safe_price
+        
+        # ---------------- GRID increse position ---------------
+        last_order_price = last_grid_order.safe_price
         
         # long trade increase postion where curPrice < lastPrice*0.98
         if trade.entry_side == 'buy' : 
@@ -177,11 +191,8 @@ class GRIDDMIPRICEStrategyFuture(IStrategy):
     
         
         # ---------------- GRID decrease position --------------
-        last_oppsite_order = find_oppsite_orders(trade)
-        if last_oppsite_order is None:
-            logger.error(f'pair:{trade.pair}, can not find oppsite order, please check')
-            return None 
-            
+        last_oppsite_order = last_unconsumed_order
+
         # long trade decrese postion where curPrice > lastPrice*1.02
         if trade.entry_side == 'buy' : 
             if current_rate >= last_oppsite_order.safe_price / self.downGridPercent:
@@ -202,29 +213,85 @@ class GRIDDMIPRICEStrategyFuture(IStrategy):
                     return -last_oppsite_order.safe_amount, f'Decrese Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
                 except Exception as exception:
                     return None
+                
+                
+        # ---------------- GRID stoploss position --------------
+        last_stoploss_order = last_unstoploss_order
+
+        # long trade decrese postion where curPrice > lastPrice*1.02
+        if trade.entry_side == 'buy' : 
+            if current_rate <= last_stoploss_order.safe_price / self.downStoplossPercent:
+                try:
+                    # This returns oppsite order amount size
+                    # stake_amount = last_oppsite_order.safe_amount * current_exit_rate / trade.leverage
+                    return -last_stoploss_order.safe_amount, f'Stoploss Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
+                except Exception as exception:
+                    return None
+                
+                
+        # short trade decrease postion where curPrice < lastPrice*0.98
+        if trade.entry_side == 'sell' : 
+            if current_rate >= last_stoploss_order.safe_price  / self.upStoplossPercent:
+                try:
+                    # This returns oppsite order amount size
+                    # stake_amount = last_oppsite_order.safe_amount * current_exit_rate / trade.leverage
+                    return -last_stoploss_order.safe_amount, f'Stoploss Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
+                except Exception as exception:
+                    return None
                     
         
         return None
     
-   
-def find_oppsite_orders(trade: Trade) -> Order:
-    stack = []
-    filled_entries = trade.select_filled_orders()
     
+    
+def find_valid_order(trade: Trade) -> List[Order]:
+    decrease_tag = 'Decrese Postion'
+    stop_loss_tag = 'Stoploss Postion'
+    
+    buy_stack: List[Order] = []
+    
+    vaild_order: List[Order] = []
+    
+    
+    filled_entries = trade.select_filled_orders()
     init_order_side = trade.entry_side
-    # logger.info(f'init_order_side:{init_order_side}')
     
     for order in filled_entries:
-        # logger.info(f'pair:{order.ft_pair}, orderid:{order.order_id},orderside:{order.ft_order_side}')
+    # logger.info(f'pair:{order.ft_pair}, orderid:{order.order_id},orderside:{order.ft_order_side}')
         if order.ft_order_side == init_order_side:
             # logger.info(f'stake append orderid:{order.order_id}')
-            stack.append(order)
+            buy_stack.append(order)
         else:
             # logger.info(f'stake pop orderid:{order.order_id}')
-            stack.pop()
-            
-    if len(stack) == 0:
-        # 一般不存在的错误情况
-        return None
+            if decrease_tag in order.ft_order_tag:
+                buy_stack.pop()
+            elif stop_loss_tag in order.ft_order_tag:
+                buy_stack.pop(0)
+                
+    
+    if len(buy_stack) == 0:
+        return vaild_order
+    
+    # buy_stack[0] first unstoploss order
+    # buy_stack[-1] first unconsumed order
+    vaild_order.append(buy_stack[0],buy_stack[-1]) #first unstop
+    
+    return vaild_order
+    
+    
+    
+def find_last_orders(trade: Trade) -> Order:
+    stop_loss_tag = 'Stoploss Postion'
+        
+    
+    filled_entries = trade.select_filled_orders()
+    
+    for order in reversed(filled_entries):
+        if stop_loss_tag not in order.ft_order_tag:
+            return Order
+                
+    return None
 
-    return stack[-1]
+
+
+    
