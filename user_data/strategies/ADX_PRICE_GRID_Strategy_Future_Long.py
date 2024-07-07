@@ -69,12 +69,12 @@ class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
     downGridLimit5 = 0.5
 
     
-    GridAmount1 = 10 #  0 - 10%  10 * 5 = 50u
-    GridAmount2 = 12 # 10 - 20%  12 * 6 = 72u
-    GridAmount3 = 14 # 20 - 30%  14 * 6 = 84u
-    GridAmount4 = 16 # 30 - 40%  16 * 8 = 128u
-    GridAmount5 = 18 # 40 - 50%  18 * 9 = 162u
-
+    GridAmount1 = 8  #  0 - 10%   8 * 5 = 40u
+    GridAmount2 = 10 # 10 - 20%  10 * 6 = 60u
+    GridAmount3 = 12 # 20 - 30%  12 * 6 = 72u
+    GridAmount4 = 14 # 30 - 40%  14 * 8 = 112u
+    GridAmount5 = 16 # 40 - 50%  16 * 9 = 144u
+    # total 428
     
     # Optimal timeframe for the strategy
     timeframe = '4h'
@@ -181,6 +181,8 @@ class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
                         stake_amount = self.GridAmount3
                     elif  first_order_price*self.downGridLimit4<=current_rate and current_rate < first_order_price*self.downGridLimit3:
                         stake_amount = self.GridAmount4
+                    elif  first_order_price*self.downGridLimit5<=current_rate and current_rate < first_order_price*self.downGridLimit4:
+                        stake_amount = self.GridAmount5
                     return stake_amount, f'Increase Postion, last order price {last_order_price}'
                 except Exception as exception:
                     return None
@@ -198,6 +200,8 @@ class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
                         stake_amount = self.GridAmount3
                     elif  first_order_price*self.upGridLimit4>=current_rate and current_rate > first_order_price*self.upGridLimit3:
                         stake_amount = self.GridAmount4
+                    elif  first_order_price*self.upGridLimit5>=current_rate and current_rate > first_order_price*self.upGridLimit4:
+                        stake_amount = self.GridAmount5
                     return stake_amount, f'Increase Postion, last order price {last_order_price}'
                 except Exception as exception:
                     return None

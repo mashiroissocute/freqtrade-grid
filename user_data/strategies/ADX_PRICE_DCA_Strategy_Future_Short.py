@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 
-class GRIDDMIPRICEStrategyFutureV2Both(IStrategy):
+class GRIDDMIPRICEStrategyFutureV2Short(IStrategy):
 
     INTERFACE_VERSION: int = 3
     can_short = True
@@ -60,11 +60,11 @@ class GRIDDMIPRICEStrategyFutureV2Both(IStrategy):
     emaThrLong = IntParameter(5, 55, default=24, space="buy")
     emaThrShort = IntParameter(5, 55, default=24, space="buy")
 
-    # upGridPercent = 1.09
-    # downGridPercent = 0.89
+    upGridPercent = 1.09
+    downGridPercent = 0.89
 
-    upGridPercent = 1.001
-    downGridPercent = 0.999
+    # upGridPercent = 1.001
+    # downGridPercent = 0.999
     
 
     # Optimal timeframe for the strategy
@@ -104,7 +104,7 @@ class GRIDDMIPRICEStrategyFutureV2Both(IStrategy):
                 & 
                 (dataframe[f'plus_di_{self.inf_tf}'] > dataframe[f'minus_di_{self.inf_tf}']) & (dataframe[f'plus_di_{self.inf_tf}']>self.adxThr.value)
             ),
-            'enter_long'] = 1
+            'enter_long'] = 0
         
         dataframe.loc[
             (
@@ -155,17 +155,19 @@ class GRIDDMIPRICEStrategyFutureV2Both(IStrategy):
                               **kwargs
                               ) -> Union[Optional[float], Tuple[Optional[float], Optional[str]]]:
 
-        dataframe, _ = self.dp.get_analyzed_dataframe(trade.pair, self.timeframe)
-        # Only buy when not actively falling price.
-        last_candle = dataframe.iloc[-1].squeeze()
-        previous_candle = dataframe.iloc[-2].squeeze()
-        if last_candle['close'] < previous_candle['close']:
-            return None
+        # dataframe, _ = self.dp.get_analyzed_dataframe(trade.pair, self.timeframe)
+        # # Only buy when not actively falling price.
+        # last_candle = dataframe.iloc[-1].squeeze()
+        # previous_candle = dataframe.iloc[-2].squeeze()
+        # if last_candle['close'] < previous_candle['close']:
+        #     return None
+
 
 
         filled_entries = trade.select_filled_orders() # all filled entry
         last_order_price = filled_entries[-1].safe_price
 
+        # logger.info(f'last order price {last_order_price}, current price {current_rate}, rate {current_rate/last_order_price}')
 
         # long trade increase postion where curPrice < lastPrice*0.89
         if trade.entry_side == 'buy' : 

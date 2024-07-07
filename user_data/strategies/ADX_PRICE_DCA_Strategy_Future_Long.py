@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 
-class GRIDDMIPRICEStrategyFutureV2Both(IStrategy):
+class GRIDDMIPRICEStrategyFutureV2Long(IStrategy):
 
     INTERFACE_VERSION: int = 3
     can_short = True
@@ -60,11 +60,9 @@ class GRIDDMIPRICEStrategyFutureV2Both(IStrategy):
     emaThrLong = IntParameter(5, 55, default=24, space="buy")
     emaThrShort = IntParameter(5, 55, default=24, space="buy")
 
-    # upGridPercent = 1.09
-    # downGridPercent = 0.89
+    upGridPercent = 1.09
+    downGridPercent = 0.89
 
-    upGridPercent = 1.001
-    downGridPercent = 0.999
     
 
     # Optimal timeframe for the strategy
@@ -112,7 +110,7 @@ class GRIDDMIPRICEStrategyFutureV2Both(IStrategy):
                 & 
                 (dataframe[f'plus_di_{self.inf_tf}'] < dataframe[f'minus_di_{self.inf_tf}']) & (dataframe[f'minus_di_{self.inf_tf}']>self.adxThr.value)
             ),
-            'enter_short'] = 1
+            'enter_short'] = 0
         return dataframe
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:

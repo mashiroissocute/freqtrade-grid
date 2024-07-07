@@ -1,1 +1,8 @@
 python ./scripts/rest_client.py --config user_data/config_future_test_GRID.json status
+
+nohup freqtrade trade --config user_data/config_future_prod_DCA_long.json --strategy GRIDDMIPRICEStrategyFutureV2Long >GRIDDMIPRICEStrategyFutureV2Long.log 2>&1 &
+
+nohup freqtrade trade --config user_data/config_future_prod_DCA_short.json --strategy GRIDDMIPRICEStrategyFutureV2Short >GRIDDMIPRICEStrategyFutureV2Short.log 2>&1 &
+
+
+
