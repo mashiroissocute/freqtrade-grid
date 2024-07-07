@@ -172,7 +172,6 @@ class GRIDDMIPRICEStrategyFuture(IStrategy):
         if trade.entry_side == 'buy' : 
             if current_rate <= last_order_price * self.downGridPercent:
                 try:
-                    # This returns first order stake size
                     stake_amount = filled_entries[0].stake_amount
                     return stake_amount, f'Increase Postion, last order price {last_order_price}'
                 except Exception as exception:
@@ -288,7 +287,7 @@ def find_last_orders(trade: Trade) -> Order:
     
     for order in reversed(filled_entries):
         if stop_loss_tag not in order.ft_order_tag:
-            return Order
+            return order
                 
     return None
 

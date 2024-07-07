@@ -8,6 +8,7 @@ from typing import Optional
 from freqtrade.strategy import CategoricalParameter, DecimalParameter, IntParameter
 from freqtrade.persistence import PairLocks
 import logging
+import math
 # --------------------------------
 
 import talib.abstract as ta
@@ -20,24 +21,24 @@ logger = logging.getLogger(__name__)
 
 
 
-class GRIDDMIPRICEStrategyFutureShort(IStrategy):
+class GRIDDMIPRICEStrategyFutureV2Both(IStrategy):
 
     INTERFACE_VERSION: int = 3
     can_short = True
     position_adjustment_enable = True
-    max_entry_position_adjustment = -1
+    max_entry_position_adjustment = 5
     amend_last_stake_amount = True
 
     minimal_roi = {
-        "0": 1
+        "0": 2
     }
     
-    stoploss =  -1
+    stoploss =  -0.8
     
-    # trailing_stop = True
-    # trailing_stop_positive = 0.05
-    # trailing_stop_positive_offset = 0.25
-    # trailing_only_offset_is_reached = True
+    trailing_stop = True
+    trailing_stop_positive = 0.1
+    trailing_stop_positive_offset = 0.3
+    trailing_only_offset_is_reached = True
     
 
     order_types = {
@@ -54,15 +55,24 @@ class GRIDDMIPRICEStrategyFutureShort(IStrategy):
     }
 
     
-    adxWindow = IntParameter(7, 21, default=14, space="buy")
-    adxThr = IntParameter(15, 35, default=25, space="buy")
-    emaThr = IntParameter(5, 55, default=24, space="buy")
-    upGridPercent = 1.02
-    downGridPercent = 0.98
+    adxWindow = IntParameter(7, 42, default=24, space="buy") 
+    adxThr = IntParameter(15, 35, default=25, space="buy") 
+    emaThrLong = IntParameter(5, 55, default=24, space="buy")
+    emaThrShort = IntParameter(5, 55, default=24, space="buy")
+
+    upGridPercent = 1.09
+    downGridPercent = 0.89
     
+    GridAmount1 = 5  #  0%  
+    GridAmount2 = 10  # 10% 
+    GridAmount3 = 30  # 20%  
+    GridAmount4 = 90 # 30%  
+    # total 135u
+
+
 
     # Optimal timeframe for the strategy
-    timeframe = '5m'
+    timeframe = '4h'
     inf_tf = '4h'    
         
     def informative_pairs(self):
@@ -78,19 +88,10 @@ class GRIDDMIPRICEStrategyFutureShort(IStrategy):
         informative = self.dp.get_pair_dataframe(pair=metadata['pair'], timeframe=self.inf_tf)
         informative['plus_di'] = ta.PLUS_DI(informative,adxWindow)
         informative['minus_di'] = ta.MINUS_DI(informative,adxWindow)
-        informative['ema'] = ta.EMA(informative, timeperiod=self.emaThr.value)
+        informative['emaLong'] = ta.EMA(informative, timeperiod=self.emaThrLong.value)
+        informative['emaShort'] = ta.EMA(informative, timeperiod=self.emaThrShort.value)
         
         
-        # n1 = 10
-        # n2 = 21
-        # ap = (dataframe['high'] + dataframe['low'] + dataframe['close']) / 3
-        # esa = ap.ewm(span=n1, min_periods=n1).mean()
-        # d = ap.sub(esa).abs().ewm(span=n1, min_periods=n1).mean()
-        # ci = (ap - esa) / (0.015 * d)
-        # tci = ci.ewm(span=n2, min_periods=n2).mean()
-        # dataframe['wt1'] = tci
-        # dataframe['wt2'] = dataframe['wt1'].rolling(window=4).mean()
-
         dataframe = merge_informative_pair(dataframe, informative, self.timeframe, self.inf_tf, ffill=True)    
 
         return dataframe
@@ -103,16 +104,15 @@ class GRIDDMIPRICEStrategyFutureShort(IStrategy):
         """
         dataframe.loc[
             (
-                # (dataframe['close'] < dataframe[f'ema_{self.inf_tf}'])
-                # & 
-                # (dataframe[f'plus_di_{self.inf_tf}'] > dataframe[f'minus_di_{self.inf_tf}']) & (dataframe[f'plus_di_{self.inf_tf}']>self.adxThr.value)
-                (dataframe['close'] < 0)
+                (dataframe['close'] < dataframe[f'emaLong_{self.inf_tf}'])
+                & 
+                (dataframe[f'plus_di_{self.inf_tf}'] > dataframe[f'minus_di_{self.inf_tf}']) & (dataframe[f'plus_di_{self.inf_tf}']>self.adxThr.value)
             ),
             'enter_long'] = 1
         
         dataframe.loc[
             (
-                (dataframe['close'] > dataframe[f'ema_{self.inf_tf}'])
+                (dataframe['close'] > dataframe[f'emaShort_{self.inf_tf}'])
                 & 
                 (dataframe[f'plus_di_{self.inf_tf}'] < dataframe[f'minus_di_{self.inf_tf}']) & (dataframe[f'minus_di_{self.inf_tf}']>self.adxThr.value)
             ),
@@ -140,17 +140,17 @@ class GRIDDMIPRICEStrategyFutureShort(IStrategy):
     def leverage(self, pair: str, current_time: datetime, current_rate: float,
                  proposed_leverage: float, max_leverage: float, entry_tag: Optional[str],
                  side: str, **kwargs) -> float:
-        return 3
+        return 2.0
     
     # DCA the initial order (opening trade)
     def custom_stake_amount(self, pair: str, current_time: datetime, current_rate: float,
                             proposed_stake: float, min_stake: Optional[float], max_stake: float,
                             leverage: float, entry_tag: Optional[str], side: str,
                             **kwargs) -> float:
-        return 10.0
+        return 5.0
     
     
-    # GRID ORDERs
+    # DCA ORDERs
     def adjust_trade_position(self, trade: Trade, current_time: datetime,
                               current_rate: float, current_profit: float,
                               min_stake: Optional[float], max_stake: float,
@@ -158,18 +158,17 @@ class GRIDDMIPRICEStrategyFutureShort(IStrategy):
                               current_entry_profit: float, current_exit_profit: float,
                               **kwargs
                               ) -> Union[Optional[float], Tuple[Optional[float], Optional[str]]]:
-        
-        # ---------------- GRID increse position ---------------
-        
+
+
         filled_entries = trade.select_filled_orders() # all filled entry
         last_order_price = filled_entries[-1].safe_price
-        
+        count_of_entries = trade.nr_of_successful_entries
+
+
         # long trade increase postion where curPrice < lastPrice*0.98
         if trade.entry_side == 'buy' : 
             if current_rate <= last_order_price * self.downGridPercent:
-                try:
-                    # This returns first order stake size
-                    stake_amount = filled_entries[0].stake_amount
+                    stake_amount = trade.stake_amount * 2
                     return stake_amount, f'Increase Postion, last order price {last_order_price}'
                 except Exception as exception:
                     return None
@@ -179,62 +178,9 @@ class GRIDDMIPRICEStrategyFutureShort(IStrategy):
         if trade.entry_side == 'sell' : 
             if current_rate >= last_order_price * self.upGridPercent:
                 try:
-                    # This returns first order stake size
-                    stake_amount = filled_entries[0].stake_amount
+                    stake_amount = trade.stake_amount * 2
                     return stake_amount, f'Increase Postion, last order price {last_order_price}'
                 except Exception as exception:
                     return None
-    
-        
-        # ---------------- GRID decrease position --------------
-        last_oppsite_order = find_oppsite_orders(trade)
-        if last_oppsite_order is None:
-            logger.error(f'pair:{trade.pair}, can not find oppsite order, please check')
-            return None 
-            
-        # long trade decrese postion where curPrice > lastPrice*1.02
-        if trade.entry_side == 'buy' : 
-            if current_rate >= last_oppsite_order.safe_price / self.downGridPercent:
-                try:
-                    # This returns oppsite order amount size
-                    # stake_amount = last_oppsite_order.safe_amount * current_exit_rate / trade.leverage
-                    return -last_oppsite_order.safe_amount, f'Decrese Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
-                except Exception as exception:
-                    return None
-                
-                
-        # short trade decrease postion where curPrice < lastPrice*0.98
-        if trade.entry_side == 'sell' : 
-            if current_rate <= last_oppsite_order.safe_price  / self.upGridPercent:
-                try:
-                    # This returns oppsite order amount size
-                    # stake_amount = last_oppsite_order.safe_amount * current_exit_rate / trade.leverage
-                    return -last_oppsite_order.safe_amount, f'Decrese Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
-                except Exception as exception:
-                    return None
-                    
-        
-        return None
-    
-   
-def find_oppsite_orders(trade: Trade) -> Order:
-    stack = []
-    filled_entries = trade.select_filled_orders()
-    
-    init_order_side = trade.entry_side
-    # logger.info(f'init_order_side:{init_order_side}')
-    
-    for order in filled_entries:
-        # logger.info(f'pair:{order.ft_pair}, orderid:{order.order_id},orderside:{order.ft_order_side}')
-        if order.ft_order_side == init_order_side:
-            # logger.info(f'stake append orderid:{order.order_id}')
-            stack.append(order)
-        else:
-            # logger.info(f'stake pop orderid:{order.order_id}')
-            stack.pop()
-            
-    if len(stack) == 0:
-        # 一般不存在的错误情况
-        return None
 
-    return stack[-1]
+        return None

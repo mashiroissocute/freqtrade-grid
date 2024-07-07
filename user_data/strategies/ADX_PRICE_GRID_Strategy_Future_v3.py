@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 
-class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
+class GRIDDMIPRICEStrategyFutureV3(IStrategy):
 
     INTERFACE_VERSION: int = 3
-    can_short = False
+    can_short = True
     position_adjustment_enable = True
     max_entry_position_adjustment = -1
     amend_last_stake_amount = True
@@ -62,22 +62,22 @@ class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
     upGridLimit4 = 1.4
     upGridLimit5 = 1.5
 
-    downGridLimit1 = 0.9
-    downGridLimit2 = 0.8
-    downGridLimit3 = 0.7
-    downGridLimit4 = 0.6
-    downGridLimit5 = 0.5
+    downGridLimit1 = 0.995
+    downGridLimit2 = 0.99
+    downGridLimit3 = 0.985
+    downGridLimit4 = 0.98
+    downGridLimit5 = 0.975
 
     
     GridAmount1 = 10 #  0 - 10%  10 * 5 = 50u
-    GridAmount2 = 12 # 10 - 20%  12 * 6 = 72u
-    GridAmount3 = 14 # 20 - 30%  14 * 6 = 84u
-    GridAmount4 = 16 # 30 - 40%  16 * 8 = 128u
-    GridAmount5 = 18 # 40 - 50%  18 * 9 = 162u
+    GridAmount2 = 15 # 10 - 20%  15 * 6 = 90u
+    GridAmount3 = 20 # 20 - 30%  20 * 6 = 120u
+    GridAmount4 = 25 # 30 - 40%  25 * 8 = 200u
+    GridAmount5 = 30 # 40 - 50%  30 * 9 = 270u
 
     
     # Optimal timeframe for the strategy
-    timeframe = '4h'
+    timeframe = '1m'
     inf_tf = '4h'    
         
     def informative_pairs(self):
@@ -121,7 +121,7 @@ class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
                 & 
                 (dataframe[f'plus_di_{self.inf_tf}'] < dataframe[f'minus_di_{self.inf_tf}']) & (dataframe[f'minus_di_{self.inf_tf}']>self.adxThr.value)
             ),
-            'enter_short'] = 0
+            'enter_short'] = 1
         return dataframe
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
@@ -181,6 +181,10 @@ class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
                         stake_amount = self.GridAmount3
                     elif  first_order_price*self.downGridLimit4<=current_rate and current_rate < first_order_price*self.downGridLimit3:
                         stake_amount = self.GridAmount4
+                    elif current_rate < first_order_price*self.downGridLimit4:
+                        self.dcaMode = 1
+                        logger.info(f'pair:{trade.pair} {trade.entry_side}, entry dca mode, currnt_rate:{current_rate}, dca_limit:{first_order_price*self.downGridLimit4}')
+                        return None 
                     return stake_amount, f'Increase Postion, last order price {last_order_price}'
                 except Exception as exception:
                     return None
@@ -198,36 +202,40 @@ class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
                         stake_amount = self.GridAmount3
                     elif  first_order_price*self.upGridLimit4>=current_rate and current_rate > first_order_price*self.upGridLimit3:
                         stake_amount = self.GridAmount4
+                    elif current_rate > first_order_price*self.upGridLimit4:
+                        self.dcaMode = 1
+                        logger.info(f'pair:{trade.pair} {trade.entry_side}, entry dca mode, currnt_rate:{current_rate}, dca_limit:{first_order_price*self.upGridLimit4}')
+                        return None 
                     return stake_amount, f'Increase Postion, last order price {last_order_price}'
                 except Exception as exception:
                     return None
     
-        # ---------------- GRID decrease position --------------
-        last_oppsite_order = find_oppsite_orders(trade)
-        if last_oppsite_order is None:
-            logger.error(f'pair:{trade.pair}, can not find oppsite order, please check')
-            return None 
-            
-        # long trade decrese postion where curPrice > lastPrice*1.02
-        if trade.entry_side == 'buy' : 
-            if current_rate >= last_oppsite_order.safe_price / self.downGridPercent:
-                try:
-                    # This returns oppsite order amount size
-                    # stake_amount = last_oppsite_order.safe_amount * current_exit_rate / trade.leverage
-                    return -last_oppsite_order.safe_amount, f'Decrese Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
-                except Exception as exception:
-                    return None
+            # ---------------- GRID decrease position --------------
+            last_oppsite_order = find_oppsite_orders(trade)
+            if last_oppsite_order is None:
+                logger.error(f'pair:{trade.pair}, can not find oppsite order, please check')
+                return None 
                 
-                
-        # short trade decrease postion where curPrice < lastPrice*0.98
-        if trade.entry_side == 'sell' : 
-            if current_rate <= last_oppsite_order.safe_price  / self.upGridPercent:
-                try:
-                    # This returns oppsite order amount size
-                    # stake_amount = last_oppsite_order.safe_amount * current_exit_rate / trade.leverage
-                    return -last_oppsite_order.safe_amount, f'Decrese Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
-                except Exception as exception:
-                    return None                
+            # long trade decrese postion where curPrice > lastPrice*1.02
+            if trade.entry_side == 'buy' : 
+                if current_rate >= last_oppsite_order.safe_price / self.downGridPercent:
+                    try:
+                        # This returns oppsite order amount size
+                        # stake_amount = last_oppsite_order.safe_amount * current_exit_rate / trade.leverage
+                        return -last_oppsite_order.safe_amount, f'Decrese Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
+                    except Exception as exception:
+                        return None
+                    
+                    
+            # short trade decrease postion where curPrice < lastPrice*0.98
+            if trade.entry_side == 'sell' : 
+                if current_rate <= last_oppsite_order.safe_price  / self.upGridPercent:
+                    try:
+                        # This returns oppsite order amount size
+                        # stake_amount = last_oppsite_order.safe_amount * current_exit_rate / trade.leverage
+                        return -last_oppsite_order.safe_amount, f'Decrese Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
+                    except Exception as exception:
+                        return None                
         
         return None
     

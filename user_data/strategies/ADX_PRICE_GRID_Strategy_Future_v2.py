@@ -21,20 +21,26 @@ logger = logging.getLogger(__name__)
 
 
 
-class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
+class GRIDDMIPRICEStrategyFutureV2(IStrategy):
 
     INTERFACE_VERSION: int = 3
-    can_short = False
+    can_short = True
     position_adjustment_enable = True
     max_entry_position_adjustment = -1
     amend_last_stake_amount = True
 
     minimal_roi = {
-        "0": 100
+        "0": 1
     }
     
-    stoploss =  -2
+    stoploss =  -0.45
     
+    trailing_stop = True
+    trailing_stop_positive = 0.15
+    trailing_stop_positive_offset = 0.45
+    trailing_only_offset_is_reached = True
+    
+
     order_types = {
         'entry': 'market',
         'exit': 'market',
@@ -55,25 +61,10 @@ class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
     emaThrShort = IntParameter(5, 55, default=24, space="buy")
     upGridPercent = 1.02
     downGridPercent = 0.98
-    
-    upGridLimit1 = 1.1    
-    upGridLimit2 = 1.2
-    upGridLimit3 = 1.3
-    upGridLimit4 = 1.4
-    upGridLimit5 = 1.5
-
-    downGridLimit1 = 0.9
-    downGridLimit2 = 0.8
-    downGridLimit3 = 0.7
-    downGridLimit4 = 0.6
-    downGridLimit5 = 0.5
-
-    
-    GridAmount1 = 10 #  0 - 10%  10 * 5 = 50u
-    GridAmount2 = 12 # 10 - 20%  12 * 6 = 72u
-    GridAmount3 = 14 # 20 - 30%  14 * 6 = 84u
-    GridAmount4 = 16 # 30 - 40%  16 * 8 = 128u
-    GridAmount5 = 18 # 40 - 50%  18 * 9 = 162u
+    upGridLimit = 1.1
+    downGridLimit = 0.9
+    fisrtAmountPercent = 0.5
+    gridAmountPercent = 0.1
 
     
     # Optimal timeframe for the strategy
@@ -121,7 +112,7 @@ class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
                 & 
                 (dataframe[f'plus_di_{self.inf_tf}'] < dataframe[f'minus_di_{self.inf_tf}']) & (dataframe[f'minus_di_{self.inf_tf}']>self.adxThr.value)
             ),
-            'enter_short'] = 0
+            'enter_short'] = 1
         return dataframe
 
     def populate_exit_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
@@ -145,14 +136,14 @@ class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
     def leverage(self, pair: str, current_time: datetime, current_rate: float,
                  proposed_leverage: float, max_leverage: float, entry_tag: Optional[str],
                  side: str, **kwargs) -> float:
-        return 2.0
+        return 3.0
     
     # DCA the initial order (opening trade)
     def custom_stake_amount(self, pair: str, current_time: datetime, current_rate: float,
                             proposed_stake: float, min_stake: Optional[float], max_stake: float,
                             leverage: float, entry_tag: Optional[str], side: str,
                             **kwargs) -> float:
-        return self.GridAmount1
+        return proposed_stake * self.fisrtAmountPercent
     
     
     # GRID ORDERs
@@ -163,24 +154,33 @@ class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
                               current_entry_profit: float, current_exit_profit: float,
                               **kwargs
                               ) -> Union[Optional[float], Tuple[Optional[float], Optional[str]]]:
-                
+        
+        # ---------------- GIRD LIMIT LINE ----------------------
+        filled_entries = trade.select_filled_orders() # all filled entry
+        first_order_price = filled_entries[0].safe_price
+        
+        if trade.entry_side == 'buy' : 
+            if current_rate < first_order_price * self.downGridLimit:
+                return None
+            if current_rate > first_order_price:
+                return None
+        
+        if trade.entry_side == 'sell' : 
+            if current_rate > first_order_price * self.upGridLimit:
+                return None
+            if current_rate < first_order_price:
+                return None
+        
         # ---------------- GRID increse position ---------------
         filled_entries = trade.select_filled_orders() # all filled entry
         last_order_price = filled_entries[-1].safe_price
-        first_order_price = filled_entries[0].safe_price
         
         # long trade increase postion where curPrice < lastPrice*0.98
         if trade.entry_side == 'buy' : 
             if current_rate <= last_order_price * self.downGridPercent:
                 try:
-                    if first_order_price*self.downGridLimit1<=current_rate and current_rate < first_order_price:
-                        stake_amount = self.GridAmount1
-                    elif  first_order_price*self.downGridLimit2<=current_rate and current_rate < first_order_price*self.downGridLimit1:
-                        stake_amount = self.GridAmount2
-                    elif  first_order_price*self.downGridLimit3<=current_rate and current_rate < first_order_price*self.downGridLimit2:
-                        stake_amount = self.GridAmount3
-                    elif  first_order_price*self.downGridLimit4<=current_rate and current_rate < first_order_price*self.downGridLimit3:
-                        stake_amount = self.GridAmount4
+                    # This returns first order stake size
+                    stake_amount = filled_entries[0].stake_amount * self.gridAmountPercent
                     return stake_amount, f'Increase Postion, last order price {last_order_price}'
                 except Exception as exception:
                     return None
@@ -190,18 +190,13 @@ class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
         if trade.entry_side == 'sell' : 
             if current_rate >= last_order_price * self.upGridPercent:
                 try:
-                    if first_order_price*self.upGridLimit1>=current_rate and current_rate > first_order_price:
-                        stake_amount = self.GridAmount1
-                    elif  first_order_price*self.upGridLimit2>=current_rate and current_rate > first_order_price*self.upGridLimit1:
-                        stake_amount = self.GridAmount2
-                    elif  first_order_price*self.upGridLimit3>=current_rate and current_rate > first_order_price*self.upGridLimit2:
-                        stake_amount = self.GridAmount3
-                    elif  first_order_price*self.upGridLimit4>=current_rate and current_rate > first_order_price*self.upGridLimit3:
-                        stake_amount = self.GridAmount4
+                    # This returns first order stake size
+                    stake_amount = filled_entries[0].stake_amount * self.gridAmountPercent
                     return stake_amount, f'Increase Postion, last order price {last_order_price}'
                 except Exception as exception:
                     return None
     
+        
         # ---------------- GRID decrease position --------------
         last_oppsite_order = find_oppsite_orders(trade)
         if last_oppsite_order is None:
@@ -227,7 +222,8 @@ class GRIDDMIPRICEStrategyFutureV3Long(IStrategy):
                     # stake_amount = last_oppsite_order.safe_amount * current_exit_rate / trade.leverage
                     return -last_oppsite_order.safe_amount, f'Decrese Postion, oppsite order price: {last_oppsite_order.safe_price} amount: {last_oppsite_order.safe_amount}'
                 except Exception as exception:
-                    return None                
+                    return None
+                    
         
         return None
     
