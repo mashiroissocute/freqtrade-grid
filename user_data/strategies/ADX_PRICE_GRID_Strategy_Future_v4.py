@@ -31,10 +31,10 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
     amend_last_stake_amount = True
 
     minimal_roi = {
-        "0": 1
+        "0": 3
     }
     
-    stoploss =  -1    
+    stoploss =  -3    
 
     order_types = {
         'entry': 'market',
@@ -149,36 +149,36 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
             return None
         
         
+        metadataMap = {}
+        metadataMap['stakeAmountList'] = []
+        metadataMap['smallGrid'] = 0.0
+        metadataMap['bigGrid'] = 0.0
+        metadataMap['lineList'] = []
+        metadataMap['fistOrderPrice'] = 0.0
         
-        metadataMap = trade.get_custom_data(key='GRIDMETADATAS')
-        
-        metadataMap[pair] = {}
-        metadataMap[pair]['stakeAmountList'] = []
-        metadataMap[pair]['smallGrid'] = 0.0
-        metadataMap[pair]['bigGrid'] = 0.0
-        metadataMap[pair]['lineList'] = []
         current_rate = first_order.safe_price
-        
+        metadataMap['fistOrderPrice'] = current_rate
+       
         # init stakeAmount
-        metadataMap[pair]['stakeAmountList'] = [self.initStakeAmount, self.initStakeAmount+1*self.stakeAmountPeriod, self.initStakeAmount+2*self.stakeAmountPeriod]
-        logger.info(f"init metadata, stakeAmountList:{metadataMap[pair]['stakeAmountList']}")
+        metadataMap['stakeAmountList'] = [self.initStakeAmount, self.initStakeAmount+1*self.stakeAmountPeriod, self.initStakeAmount+2*self.stakeAmountPeriod]
+
 
         # init small price grid
-        metadataMap[pair]['smallGrid'] = current_rate*self.smallGridPercent
-        logger.info(f"init metadata, current_rate: {current_rate}, smallGrid:{metadataMap[pair]['smallGrid']}")
+        metadataMap['smallGrid'] = current_rate*self.smallGridPercent
+
         
         # init big price grid
-        metadataMap[pair]['bigGrid'] = current_rate*self.bigGridPercent
-        logger.info(f"init metadata, current_rate: {current_rate}, bigGrid:{metadataMap[pair]['bigGrid']}")
+        metadataMap['bigGrid'] = current_rate*self.bigGridPercent
+
         
             
         # init line        
-        if trade.entry_side == "long" :
-            metadataMap[pair]['lineList'] = [current_rate, current_rate-1*metadataMap[pair]['bigGrid'],current_rate-2*metadataMap[pair]['bigGrid'],current_rate-3*metadataMap[pair]['bigGrid']]
-        elif trade.entry_side == "short" :
-            metadataMap[pair]['lineList'] = [current_rate, current_rate+1*metadataMap[pair]['bigGrid'],current_rate+2*metadataMap[pair]['bigGrid'],current_rate+3*metadataMap[pair]['bigGrid']]
+        if trade.entry_side == "buy" :
+            metadataMap['lineList'] = [current_rate, current_rate-1*metadataMap['bigGrid'],current_rate-2*metadataMap['bigGrid'],current_rate-3*metadataMap['bigGrid']]
+        elif trade.entry_side == "sell" :
+            metadataMap['lineList'] = [current_rate, current_rate+1*metadataMap['bigGrid'],current_rate+2*metadataMap['bigGrid'],current_rate+3*metadataMap['bigGrid']]
         
-        logger.info(f"init metadata, current_rate: {current_rate} lineList:{metadataMap[pair]['lineList']}")
+        logger.info(f"init metadata, metadataMap {metadataMap}")
 
         
         trade.set_custom_data(key='GRIDMETADATAS',value=metadataMap)
@@ -193,27 +193,39 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
                               current_entry_profit: float, current_exit_profit: float,
                               **kwargs
                               ) -> Union[Optional[float], Tuple[Optional[float], Optional[str]]]:
-    # --------------- read metadata -----------------
+    # --------------- read and check metadata -----------------
         metadataMap = trade.get_custom_data(key='GRIDMETADATAS')
-        logger.info(f"metadataMap {metadataMap}")
+        logger.info(f"read metadata {trade.pair}, metadataMap {metadataMap}")
         
-        lineList = metadataMap[trade.pair]['lineList']
-        smallGrid = metadataMap[trade.pair]['smallGrid']
-        bigGrid = metadataMap[trade.pair]['bigGrid']
-        stakeAmountList = metadataMap[trade.pair]['stakeAmountList']
-        
-    # ---------------- GRID stoploss position --------------
+        lineList = metadataMap['lineList']
         if len(lineList) != 4 :
-            logger.error(f"{trade.pair} lineMap is not 4, lineMap: {lineList}")
+            logger.error(f"{trade.pair} lineList is not 4, lineMap: {lineList}")
             return None
         
+        smallGrid = metadataMap['smallGrid']
+        if smallGrid == 0.0 :
+            logger.error(f"{trade.pair} smallGrid is 0, smallGrid: {smallGrid}")
+            return None
         
+        bigGrid = metadataMap['bigGrid']
+        if bigGrid == 0.0 :
+            logger.error(f"{trade.pair} bigGrid is 0, bigGrid: {bigGrid}")
+            return None
+        
+        stakeAmountList = metadataMap['stakeAmountList']
+        if len(stakeAmountList) != 3 :
+            logger.error(f"{trade.pair} stakeAmountList is not 3, stakeAmountList: {stakeAmountList}")
+            return None
+        
+    # ---------------- GRID stoploss position --------------
         stoplossStartLine = lineList[0] # stoploss start line
         stoplossEndLine = lineList[1] # stoploss end line
         stoplossTriggerLine = lineList[3] # stoploss trigger line
+        stoplossNextGridStackAmount = stakeAmountList[1] # stoploss next grid stack amount
         
         if trade.entry_side == 'buy' : 
             if current_rate < stoplossTriggerLine:
+                # calculate stoploss amount
                 to_stoplossorders = find_vaild_orders_betweenline(trade, stoplossStartLine, stoplossEndLine+0.00000001) # stoplossStartLine > stoplossEndLine when long
                 to_stoplossamount = 0
                 to_stoplossstakeamount = 0
@@ -221,29 +233,27 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
                     to_stoplossamount += order.safe_amount
                     to_stoplossstakeamount += order.safe_cost
                 # change line and stackAmount after stoploss
-                metadataMap[trade.pair]['lineList'] = [stoplossStartLine, stoplossStartLine-1*bigGrid,stoplossStartLine-2*bigGrid,stoplossStartLine-3*bigGrid]
-                initStakeAmount = stakeAmountList[1]
-                metadataMap[trade.pair]['stakeAmountList'] = [initStakeAmount, initStakeAmount+1*self.stakeAmountPeriod, initStakeAmount+2*self.stakeAmountPeriod]
-                newLineList = metadataMap[trade.pair]['lineList']
+                metadataMap['lineList'] = [stoplossEndLine, stoplossEndLine-1*bigGrid, stoplossEndLine-2*bigGrid, stoplossEndLine-3*bigGrid]
+                metadataMap['stakeAmountList'] = [stoplossNextGridStackAmount, stoplossNextGridStackAmount+1*self.stakeAmountPeriod, stoplossNextGridStackAmount+2*self.stakeAmountPeriod]
                 trade.set_custom_data(key='GRIDMETADATAS',value=metadataMap)
                 try:
-                    return -to_stoplossamount, f'Stoploss Postion, currentrate: {current_rate}, beforeLines: {lineList}, currentLines: {newLineList}, amount: {to_stoplossamount} loss: -{to_stoplossstakeamount - to_stoplossamount*current_rate}'
+                    return -to_stoplossamount, f'Stoploss Postion, currentrate: {current_rate}, metadataMap: {metadataMap}, amount: {to_stoplossamount} loss: -{to_stoplossstakeamount - to_stoplossamount*current_rate}'
                 except Exception as exception:
                     return None
                 
                 
         if trade.entry_side == 'sell' : 
             if current_rate > stoplossTriggerLine:
+                # calculate stoploss amount
                 to_stoplossorders = find_vaild_orders_betweenline(trade, stoplossStartLine, stoplossEndLine-0.00000001) # stoplossEndLine > stoplossStartLine  when short
                 to_stoplossamount = 0
                 for order in to_stoplossorders:
                     to_stoplossamount += order.safe_amount
                     to_stoplossstakeamount += order.safe_cost
                 # change line and stackAmount after stoploss
-                metadataMap[trade.pair]['lineList'] = [stoplossStartLine, stoplossStartLine+1*bigGrid,stoplossStartLine+2*bigGrid,stoplossStartLine+3*bigGrid]
-                initStakeAmount = stakeAmountList[1]
-                metadataMap[trade.pair]['stakeAmountList'] = [initStakeAmount, initStakeAmount+1*self.stakeAmountPeriod, initStakeAmount+2*self.stakeAmountPeriod]
-                newLineList = metadataMap[trade.pair]['lineList']
+                metadataMap['lineList'] = [stoplossEndLine, stoplossEndLine+1*bigGrid, stoplossEndLine+2*bigGrid, stoplossEndLine+3*bigGrid]
+                metadataMap['stakeAmountList'] = [stoplossNextGridStackAmount, stoplossNextGridStackAmount+1*self.stakeAmountPeriod, stoplossNextGridStackAmount+2*self.stakeAmountPeriod]
+                newLineList = metadataMap['lineList']
                 trade.set_custom_data(key='GRIDMETADATAS',value=metadataMap)
                 try:
                     return -to_stoplossamount, f'Stoploss Postion, currentrate: {current_rate}, beforeLines: {lineList}, currentLines: {newLineList}, amount: {to_stoplossamount} loss: {to_stoplossstakeamount - to_stoplossamount*current_rate}'
@@ -253,10 +263,6 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
                 
         
     # ---------------- GRID increse position ---------------   
-        if len(stakeAmountList) != 3 :
-            logger.error(f"{trade.pair} stakeAmountMap is not 3, stakeAmounts: {stakeAmountList}")
-            return None
-        
         line0 = lineList[0] 
         line1 = lineList[1]
         line2 = lineList[2]
@@ -274,11 +280,11 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
         if trade.entry_side == 'buy' : 
             if current_rate <= lastOperateOrder.safe_price - smallGrid:
                 try:
-                    if line1 <=current_rate < line0:
+                    if line1 < current_rate <= line0:
                         stake_amount = stakeAmount1
-                    elif line2 <=current_rate < line1:
+                    elif line2 < current_rate <= line1:
                         stake_amount = stakeAmount2
-                    elif line3 <=current_rate < line2:
+                    elif line3 < current_rate <= line2:
                         stake_amount = stakeAmount3
                         
                     return stake_amount, f'Increase Postion, stake_amount: {stake_amount}, lastorderprice {lastOperateOrder.safe_price}, currentrate: {current_rate}, lines: {lineList}'
@@ -290,11 +296,11 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
         if trade.entry_side == 'sell' : 
             if current_rate >= lastOperateOrder.safe_price + smallGrid:
                 try:
-                    if line1 >=current_rate > line0:
+                    if line1 > current_rate >= line0:
                         stake_amount = stakeAmount1
-                    elif line2 >=current_rate > line1:
+                    elif line2 > current_rate >= line1:
                         stake_amount = stakeAmount2
-                    elif line3 >=current_rate > line2:
+                    elif line3 > current_rate >= line2:
                         stake_amount = stakeAmount3
                         
                     return stake_amount, f'Increase Postion, stake_amount: {stake_amount}, lastorderprice {lastOperateOrder.safe_price}, currentrate: {current_rate}, lines: {lineList}'
@@ -328,7 +334,13 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
                 except Exception as exception:
                     return None
                 
-        
+                
+    # ---------------- push msg ------------------
+        if trade.entry_side == 'buy' :
+            logger.info(f'nextBuyPrice {lastOperateOrder.safe_price - smallGrid} currentPrice {current_rate} nextSellPrice {lastValidOrder.safe_price + smallGrid}')
+        elif trade.entry_side == 'sell' :
+            logger.info(f'nextSellPrice {lastOperateOrder.safe_price + smallGrid} currentPrice {current_rate} nextBuyPrice {lastValidOrder.safe_price - smallGrid}')
+            
         return None
 
 
