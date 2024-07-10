@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 
-class GRIDDMIPRICEStrategyFutureV4(IStrategy):
+class GRIDDMIPRICEStrategyFutureV5(IStrategy):
 
     INTERFACE_VERSION: int = 3
     can_short = True
@@ -49,16 +49,16 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
         'exit': 'GTC'
     }
 
-    adxWindow = IntParameter(7, 21, default=12, space="buy")
+    adxWindow = IntParameter(7, 21, default=24, space="buy")
     adxThr = IntParameter(15, 35, default=25, space="buy")
     emaThrLong = IntParameter(5, 55, default=24, space="buy")
     emaThrShort = IntParameter(5, 55, default=24, space="buy")
     
     initStakeAmount = 10
-    stakeAmountPeriod = 10
+    stakeAmountPeriod = 5
     
-    smallGridPercent = 0.001
-    bigGridPercent = 0.002
+    smallGridPercent = 0.01
+    bigGridPercent = 0.05
 
 
     # Optimal timeframe for the strategy
@@ -144,18 +144,38 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
     
     def order_filled(self, pair: str, trade: Trade, order: Order, current_time: datetime, **kwargs) -> None:        
         
+        increase_tag = 'Increase Postion'
+        decrease_tag = 'Decrease Postion'
+        stoploss_tag = 'Stoploss Postion'
+        
         filled_entries = trade.select_filled_orders()
         first_order = filled_entries[0]
         if first_order.order_id != order.order_id: # Not trade's first order 
+            
+            metadataMap = trade.get_custom_data(key='GRIDMETADATAS')
+            
+            if increase_tag in order.ft_order_tag: # increase order
+                logger.info(f"{increase_tag} append vaildOrderID {order.order_id}")
+                metadataMap['vaildOrderIDs'].append(order.order_id)
+            elif decrease_tag in order.ft_order_tag: # decrease order
+                logger.info(f"{decrease_tag} remove vaildOrderID {order.order_id}")
+                metadataMap['vaildOrderIDs'].remove(order.order_id)
+            elif stoploss_tag in order.ft_order_tag: # stoploss order
+                return None
+        
+            trade.set_custom_data(key='GRIDMETADATAS',value=metadataMap) # store metadataMap
             return None
         
         
+        
+        # trade's first order
         metadataMap = {}
         metadataMap['stakeAmountList'] = []
         metadataMap['smallGrid'] = 0.0
         metadataMap['bigGrid'] = 0.0
         metadataMap['lineList'] = []
         metadataMap['fistOrderPrice'] = 0.0
+        metadataMap['vaildOrderIDs'] = []
         
         current_rate = first_order.safe_price
         metadataMap['fistOrderPrice'] = current_rate
@@ -172,15 +192,17 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
         metadataMap['bigGrid'] = current_rate*self.bigGridPercent
 
         
-            
         # init line        
         if trade.entry_side == "buy" :
             metadataMap['lineList'] = [current_rate, current_rate-1*metadataMap['bigGrid'],current_rate-2*metadataMap['bigGrid'],current_rate-3*metadataMap['bigGrid']]
         elif trade.entry_side == "sell" :
             metadataMap['lineList'] = [current_rate, current_rate+1*metadataMap['bigGrid'],current_rate+2*metadataMap['bigGrid'],current_rate+3*metadataMap['bigGrid']]
-        
-        logger.info(f"init metadata, metadataMap {metadataMap}")
 
+        
+        # init orderIDS
+        metadataMap['vaildOrderIDs'] = [order.order_id]
+
+        logger.info(f"init metadata, metadataMap {metadataMap}")
         
         trade.set_custom_data(key='GRIDMETADATAS',value=metadataMap)
         return None
@@ -218,6 +240,11 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
             logger.error(f"{trade.pair} stakeAmountList is not 3, stakeAmountList: {stakeAmountList}")
             return None
         
+        vaildOrderIDs = metadataMap['vaildOrderIDs']
+        if len(vaildOrderIDs) == 0 :
+            logger.error(f"{trade.pair} vaildOrderIDs is 0, vaildOrderIDs: {vaildOrderIDs}")
+            return None
+        
     # ---------------- GRID stoploss position --------------
         stoplossStartLine = lineList[0] # stoploss start line
         stoplossEndLine = lineList[1] # stoploss end line
@@ -230,15 +257,19 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
                 to_stoplossorders = find_valid_buyorders_betweenline(trade, stoplossStartLine, stoplossEndLine) # stoplossStartLine is upline when long
                 to_stoplossamount = 0
                 to_stoplossstakeamount = 0
+                to_stoplossorderids = []
                 for order in to_stoplossorders:
                     to_stoplossamount += order.safe_amount
                     to_stoplossstakeamount += order.safe_cost
+                    to_stoplossorderids.append(order.order_id)
                 # change line and stackAmount after stoploss
                 metadataMap['lineList'] = [stoplossEndLine, stoplossEndLine-1*bigGrid, stoplossEndLine-2*bigGrid, stoplossEndLine-3*bigGrid]
                 metadataMap['stakeAmountList'] = [stoplossNextGridStackAmount, stoplossNextGridStackAmount+1*self.stakeAmountPeriod, stoplossNextGridStackAmount+2*self.stakeAmountPeriod]
+                logger.info(f"Stoploss Postion remove vaildOrderID {to_stoplossorderids}")
+                metadataMap['vaildOrderIDs'] = removeStoplossOrderIDs(metadataMap['vaildOrderIDs'],to_stoplossorderids)
                 trade.set_custom_data(key='GRIDMETADATAS',value=metadataMap)
                 try:
-                    return -to_stoplossamount, f'Stoploss Postion, currentrate: {current_rate}, metadataMap: {metadataMap}, amount: {to_stoplossamount} loss: -{to_stoplossstakeamount - to_stoplossamount*current_rate}'
+                    return -to_stoplossamount, f'Stoploss Postion, stoplossamount: {to_stoplossamount} loss: -{to_stoplossstakeamount - to_stoplossamount*current_rate}'
                 except Exception as exception:
                     return None
                 
@@ -249,16 +280,19 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
                 to_stoplossorders = find_valid_sellorders_betweenline(trade, stoplossStartLine, stoplossEndLine) # stoplossStartLine is downline when short
                 to_stoplossamount = 0
                 to_stoplossstakeamount = 0
+                to_stoplossorderids = []
                 for order in to_stoplossorders:
                     to_stoplossamount += order.safe_amount
                     to_stoplossstakeamount += order.safe_cost
+                    to_stoplossorderids.append(order.order_id)
                 # change line and stackAmount after stoploss
                 metadataMap['lineList'] = [stoplossEndLine, stoplossEndLine+1*bigGrid, stoplossEndLine+2*bigGrid, stoplossEndLine+3*bigGrid]
                 metadataMap['stakeAmountList'] = [stoplossNextGridStackAmount, stoplossNextGridStackAmount+1*self.stakeAmountPeriod, stoplossNextGridStackAmount+2*self.stakeAmountPeriod]
-                newLineList = metadataMap['lineList']
+                logger.info(f"Stoploss Postion remove vaildOrderID {to_stoplossorderids}")
+                metadataMap['vaildOrderIDs'] = removeStoplossOrderIDs(metadataMap['vaildOrderIDs'],to_stoplossorderids)
                 trade.set_custom_data(key='GRIDMETADATAS',value=metadataMap)
                 try:
-                    return -to_stoplossamount, f'Stoploss Postion, currentrate: {current_rate}, beforeLines: {lineList}, currentLines: {newLineList}, amount: {to_stoplossamount} loss: {to_stoplossstakeamount - to_stoplossamount*current_rate}'
+                    return -to_stoplossamount, f'Stoploss Postion, stoplossamount: {to_stoplossamount} loss: {to_stoplossstakeamount - to_stoplossamount*current_rate}'
                 except Exception as exception:
                     return None
                 
@@ -273,7 +307,7 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
         stakeAmount2 = stakeAmountList[1] # between line1 - line2
         stakeAmount3 = stakeAmountList[2] # between line2 - line3
         
-        lastOperateOrder = find_last_orders(trade)
+        lastOperateOrder = find_last_operate_order(trade)
         if lastOperateOrder == None:
             logger.error(f"{trade.pair} lastOperateOrder is None")
             return None
@@ -288,7 +322,7 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
                         stake_amount = stakeAmount2
                     elif line3 < current_rate <= line2:
                         stake_amount = stakeAmount3
-                        
+                    
                     return stake_amount, f'Increase Postion, stake_amount: {stake_amount}, lastorderprice {lastOperateOrder.safe_price}, currentrate: {current_rate}, lines: {lineList}'
                 except Exception as exception:
                     return None
@@ -313,45 +347,32 @@ class GRIDDMIPRICEStrategyFutureV4(IStrategy):
         
     # ---------------- GRID decrease position --------------
         # long trade decrese postion where curPrice >= lastPrice + GridPrice
+        lastValidOrder = find_last_valid_order(trade, vaildOrderIDs[-1])
+        if lastValidOrder == None:
+            logger.error(f"{trade.pair}  validOrders is None")
+            return None
+        
         if trade.entry_side == 'buy' : 
-            validOrders = find_vaild_buyorders_belowline(trade, line0)
-            if len(validOrders) == 0:
-                logger.error(f"{trade.pair} buy validOrders is None")
-                return None
-            lastValidOrder = validOrders[-1]
             if current_rate >= lastValidOrder.safe_price + smallGrid:
                 try:
-                    return -lastValidOrder.safe_amount, f'Decrese Postion, oppsite order price: {lastValidOrder.safe_price} amount: {lastValidOrder.safe_amount}'
+                    return -lastValidOrder.safe_amount, f'Decrease Postion, oppsite order price: {lastValidOrder.safe_price} amount: {lastValidOrder.safe_amount}'
                 except Exception as exception:
                     return None
                 
                 
         # short trade decrease postion where curPrice <= lastPrice - GridPrice
         if trade.entry_side == 'sell' : 
-            validOrders = find_vaild_sellorders_aboveline(trade, line0)
-            if len(validOrders) == 0:
-                logger.error(f"{trade.pair} sell validOrders is None")
-                return None
-            lastValidOrder = validOrders[-1]
             if current_rate <= lastValidOrder.safe_price - smallGrid:
                 try:
-                    return -lastValidOrder.safe_amount, f'Decrese Postion, oppsite order price: {lastValidOrder.safe_price} amount: {lastValidOrder.safe_amount}'
+                    return -lastValidOrder.safe_amount, f'Decrease Postion, oppsite order price: {lastValidOrder.safe_price} amount: {lastValidOrder.safe_amount}'
                 except Exception as exception:
                     return None
                 
-                
-    # ---------------- push msg ------------------
-        if trade.entry_side == 'buy' :
-            logger.info(f'nextBuyPrice {lastOperateOrder.safe_price - smallGrid} currentPrice {current_rate} nextSellPrice {lastValidOrder.safe_price + smallGrid}')
-        elif trade.entry_side == 'sell' :
-            logger.info(f'nextSellPrice {lastOperateOrder.safe_price + smallGrid} currentPrice {current_rate} nextBuyPrice {lastValidOrder.safe_price - smallGrid}')
-            
         return None
 
 
 
-
-def find_last_orders(trade: Trade) -> Order:
+def find_last_operate_order(trade: Trade) -> Order:
     stop_loss_tag = 'Stoploss Postion'
         
     
@@ -363,73 +384,46 @@ def find_last_orders(trade: Trade) -> Order:
                 
     return None
 
-
-def find_vaild_buyorders_belowline(trade: Trade, line: float) -> List[Order]:    
-    
-    stop_loss_tag = 'Stoploss Postion'
-    
-    vaild_orders: List[Order] = []
-    
+def find_last_valid_order(trade: Trade, orderID: str) -> Order:   
     filled_entries = trade.select_filled_orders()
-    init_order_side = trade.entry_side
     
-    for order in filled_entries:
-        if stop_loss_tag not in order.ft_order_tag: # exclude stoploss order
-
-            if order.ft_order_side != init_order_side or order.safe_price > line:  # pass orders above line
-                continue
-            
-            
-            if order.ft_order_side == init_order_side and order.safe_price <= line: # below line buy order:
-                vaild_orders.append(order)
-            else: # corresponse sell order:
-                vaild_orders.pop()
+    for order in reversed(filled_entries):
+        if orderID == order.order_id: # exclude stoploss order
+            return order
                 
-    return vaild_orders
-
-def find_valid_buyorders_betweenline(trade: Trade, lineUp: float, lineDown: float) -> List[Order]:
-    vaild_buyorders_belowline = find_vaild_buyorders_belowline(trade, lineUp)
-    
-    vaild_orders: List[Order] = []
-    for order in vaild_buyorders_belowline:
-        if order.safe_price > lineDown:
-            vaild_orders.append(order)
-    
-    return vaild_orders
+    return None
 
 
-def find_vaild_sellorders_aboveline(trade: Trade, line: float) -> List[Order]:    
-    
-    logger.info(f'find_vaild_sellorders_aboveline line {line}')
-    
-    stop_loss_tag = 'Stoploss Postion'
-    
-    vaild_orders: List[Order] = []
-    
+
+def find_valid_buyorders_betweenline(trade: Trade, vaildOrderIDs: List[str], lineUp: float, lineDown: float) -> List[Order]:
     filled_entries = trade.select_filled_orders()
-    init_order_side = trade.entry_side
+    vaild_orders: List[Order] = []
     
     for order in filled_entries:
-        if stop_loss_tag not in order.ft_order_tag: # exclude stoploss order
-            
-            if order.ft_order_side != init_order_side or order.safe_price < line: # pass orders below line
-                continue
-            
-            logger.info(f'find_vaild_sellorders_aboveline order {order}')
-            if order.ft_order_side == init_order_side and order.safe_price >= line: # above line sell order:
-                vaild_orders.append(order)
-            else: # corresponse buy order:
-                vaild_orders.pop()
-            logger.info(f'find_vaild_sellorders_aboveline vaild_orders {vaild_orders}')
-
-    return vaild_orders
-
-def find_valid_sellorders_betweenline(trade: Trade, lineDown: float, lineUp: float) -> List[Order]:
-    vaild_sellorders_aboveline = find_vaild_sellorders_aboveline(trade, lineDown)
-    
-    vaild_orders: List[Order] = []
-    for order in vaild_sellorders_aboveline:
-        if order.safe_price < lineUp:
+        if order.order_id in vaildOrderIDs and lineUp >= order.safe_price and order.safe_price > lineDown:
             vaild_orders.append(order)
     
     return vaild_orders
+
+
+
+def find_valid_sellorders_betweenline(trade: Trade, vaildOrderIDs: List[str], lineDown: float, lineUp: float) -> List[Order]:
+    filled_entries = trade.select_filled_orders()
+    vaild_orders: List[Order] = []
+    
+    for order in filled_entries:
+        if order.order_id in vaildOrderIDs and lineUp > order.safe_price and order.safe_price >= lineDown:
+            vaild_orders.append(order)
+    
+    return vaild_orders
+
+
+def removeStoplossOrderIDs(metaDataOrderIDs: List[str],toRemoveOrderIDs: List[str]) -> List[str]:
+    
+    valid_order_ids: List[str]= []
+    
+    for metaOrderID in metaDataOrderIDs:
+        if metaOrderID not in toRemoveOrderIDs:
+            valid_order_ids.append(metaOrderID)
+            
+    return valid_order_ids
