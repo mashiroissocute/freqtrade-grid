@@ -57,8 +57,8 @@ class GRIDDMIPRICEStrategyFutureV5(IStrategy):
     initStakeAmount = 10
     stakeAmountPeriod = 5
     
-    smallGridPercent = 0.01
-    bigGridPercent = 0.05
+    smallGridPercent = 0.001
+    bigGridPercent = 0.002
 
 
     # Optimal timeframe for the strategy
@@ -155,11 +155,11 @@ class GRIDDMIPRICEStrategyFutureV5(IStrategy):
             metadataMap = trade.get_custom_data(key='GRIDMETADATAS')
             
             if increase_tag in order.ft_order_tag: # increase order
-                logger.info(f"{increase_tag} append vaildOrderID {order.order_id}")
                 metadataMap['vaildOrderIDs'].append(order.order_id)
+                logger.info(f"{increase_tag} append vaildOrderID {order.order_id}")
             elif decrease_tag in order.ft_order_tag: # decrease order
-                logger.info(f"{decrease_tag} remove vaildOrderID {order.order_id}")
-                metadataMap['vaildOrderIDs'].remove(order.order_id)
+                orderID = metadataMap['vaildOrderIDs'].pop()
+                logger.info(f"{decrease_tag} remove vaildOrderID {orderID}")
             elif stoploss_tag in order.ft_order_tag: # stoploss order
                 return None
         
@@ -254,7 +254,7 @@ class GRIDDMIPRICEStrategyFutureV5(IStrategy):
         if trade.entry_side == 'buy' : 
             if current_rate < stoplossTriggerLine:
                 # calculate stoploss amount
-                to_stoplossorders = find_valid_buyorders_betweenline(trade, stoplossStartLine, stoplossEndLine) # stoplossStartLine is upline when long
+                to_stoplossorders = find_valid_buyorders_betweenline(trade, vaildOrderIDs, stoplossStartLine, stoplossEndLine) # stoplossStartLine is upline when long
                 to_stoplossamount = 0
                 to_stoplossstakeamount = 0
                 to_stoplossorderids = []
@@ -277,7 +277,7 @@ class GRIDDMIPRICEStrategyFutureV5(IStrategy):
         if trade.entry_side == 'sell' : 
             if current_rate > stoplossTriggerLine:
                 # calculate stoploss amount
-                to_stoplossorders = find_valid_sellorders_betweenline(trade, stoplossStartLine, stoplossEndLine) # stoplossStartLine is downline when short
+                to_stoplossorders = find_valid_sellorders_betweenline(trade, vaildOrderIDs, stoplossStartLine, stoplossEndLine) # stoplossStartLine is downline when short
                 to_stoplossamount = 0
                 to_stoplossstakeamount = 0
                 to_stoplossorderids = []
