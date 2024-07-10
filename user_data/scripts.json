@@ -5,6 +5,4 @@ nohup freqtrade trade --config user_data/config_future_prod_DCA_long.json --stra
 nohup freqtrade trade --config user_data/config_future_prod_DCA_short.json --strategy GRIDDMIPRICEStrategyFutureV2Short >GRIDDMIPRICEStrategyFutureV2Short.log 2>&1 &
 
 
-nohup freqtrade trade --config user_data/config_future_prod_GRID.json --strategy GRIDDMIPRICEStrategyFutureV5Long >GRIDDMIPRICEStrategyFutureV5Long.log 2>&1 &
-
-
+nohup freqtrade trade --config user_data/config_future_prod_GRID_long.json --strategy GRIDDMIPRICEStrategyFutureV5Long >GRIDDMIPRICEStrategyFutureV5Long.log 2>&1 &

@@ -164,6 +164,7 @@ class GRIDDMIPRICEStrategyFutureV5Long(IStrategy):
                 return None
         
             trade.set_custom_data(key='GRIDMETADATAS',value=metadataMap) # store metadataMap
+            logger.info(f"after order_filled metadata {trade.pair}, metadataMap {metadataMap}")
             return None
         
         
@@ -218,7 +219,7 @@ class GRIDDMIPRICEStrategyFutureV5Long(IStrategy):
                               ) -> Union[Optional[float], Tuple[Optional[float], Optional[str]]]:
     # --------------- read and check metadata -----------------
         metadataMap = trade.get_custom_data(key='GRIDMETADATAS')
-        logger.info(f"read metadata {trade.pair}, metadataMap {metadataMap}")
+        
         
         lineList = metadataMap['lineList']
         if len(lineList) != 4 :
