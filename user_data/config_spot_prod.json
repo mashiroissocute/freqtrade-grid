@@ -1,0 +1,80 @@
+{
+    "max_open_trades": 10,
+    "stake_currency": "USDT",
+    "stake_amount": "unlimited",
+    "tradable_balance_ratio": 0.98,
+    "fiat_display_currency": "USD",
+    "dry_run": false,
+    "db_url": "sqlite:///GRIDDMIPRICEStrategySpot.prod.sqlite",
+    "cancel_open_orders_on_exit": false,
+    "trading_mode": "spot",
+    "margin_mode": "",
+    "unfilledtimeout": {
+        "entry": 10,
+        "exit": 10,
+        "exit_timeout_count": 0,
+        "unit": "minutes"
+    },
+    "entry_pricing": {
+        "price_side": "other",
+        "use_order_book": true,
+        "order_book_top": 1,
+        "price_last_balance": 0.0,
+        "check_depth_of_market": {
+            "enabled": false,
+            "bids_to_ask_delta": 1
+        }
+    },
+    "exit_pricing":{
+        "price_side": "other",
+        "use_order_book": true,
+        "order_book_top": 1
+    },
+    "exchange": {
+        "name": "binance",
+        "key": "1KMv1o0eM0E6HksT7cFCch9Sug8jqe712NvCVvWwsDogyaiDvPG0LjRyVlNWK7Cs",
+        "secret": "vOrURY2oEIr71Ry4CcBjvheTmaotKcR9xbp9ISjwc6N6mKBpDujlA2vLjePr3PEk",
+        "ccxt_config": {},
+        "ccxt_async_config": {},
+        "pair_whitelist": [
+            "PEPE/USDT",
+            "WIF/USDT",
+            "FLOKI/USDT",
+            "1000SATS/USDT",
+            "GALA/USDT",
+            "PYTH/USDT",
+            "NEAR/USDT",
+            "LDO/USDT"
+        ],
+        "pair_blacklist": [
+        ]
+    },
+    "pairlists": [
+        {"method": "StaticPairList"}
+    ],
+    "telegram": {
+        "enabled": true,
+        "token": "6716456105:AAFioPmzX7zLvVZWs7qtEYddhEnx6MmkHkU",
+        "chat_id": "-4193778130"
+    },
+    "api_server": {
+        "enabled": true,
+        "listen_ip_address": "0.0.0.0",
+        "listen_port": 8080,
+        "verbosity": "error",
+        "enable_openapi": false,
+        "jwt_secret_key": "deb1cd340cd8b8244ec9df7b361c0e078f134ed9881eb6f598b83ae651c708be",
+        "ws_token": "7SUlvTqmPXXBwGIBHIastfhRTdW-Vmsg8A",
+        "CORS_origins": [],
+        "username": "freqtrader",
+        "password": "li19960205"
+    },
+    "bot_name": "freqtrade",
+    "initial_state": "running",
+    "force_entry_enable": false,
+    "internals": {
+        "process_throttle_secs": 5
+    }
+}
+
+
