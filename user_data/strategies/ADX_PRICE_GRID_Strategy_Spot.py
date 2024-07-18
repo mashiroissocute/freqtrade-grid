@@ -40,7 +40,7 @@ class GRIDDMIPRICEStrategySpot(IStrategy):
         'entry': 'market',
         'exit': 'market',
         'stoploss': 'market',
-        'stoploss_on_exchange': True
+        'stoploss_on_exchange': False
     }
 
     # Optional order time in force.
@@ -309,12 +309,9 @@ class GRIDDMIPRICEStrategySpot(IStrategy):
         if trade.entry_side == 'buy' : 
             if current_rate <= lastOperateOrder.safe_price - smallGrid:
                 try:
-                    if line1 < current_rate <= line0:
-                        stake_amount = stakeAmount1
-                    elif line2 < current_rate <= line1:
-                        stake_amount = stakeAmount2
-                    elif line3 < current_rate <= line2:
-                        stake_amount = stakeAmount3
+                    
+                    priod = (line0 - current_rate) / bigGrid 
+                    stake_amount = stakeAmount1 + self.stakeAmountPeriod * int(priod)
                     
                     return stake_amount, f'Increase Postion, stake_amount: {stake_amount}, lastorderprice {lastOperateOrder.safe_price}, currentrate: {current_rate}, lines: {lineList}'
                 except Exception as exception:
