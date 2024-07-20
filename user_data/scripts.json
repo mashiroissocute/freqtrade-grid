@@ -8,3 +8,7 @@ nohup freqtrade trade --config user_data/config_future_prod_DCA_short.json --str
 nohup freqtrade trade --config user_data/config_future_prod_GRID_long.json --strategy GRIDDMIPRICEStrategyFutureV5Long >GRIDDMIPRICEStrategyFutureV5Long.log 2>&1 &
 
 nohup freqtrade trade --config user_data/config_spot_prod.json --strategy GRIDDMIPRICEStrategySpot >GRIDDMIPRICEStrategySpot.log 2>&1 &
+
+
+
+freqtrade trade --config user_data/config_future_test_GRID.json --strategy GRIDDMIPRICEStrategyFutureV6 >GRIDDMIPRICEStrategyFutureV6.log

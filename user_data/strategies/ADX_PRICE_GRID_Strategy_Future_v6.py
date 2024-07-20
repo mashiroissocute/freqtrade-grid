@@ -54,22 +54,19 @@ class GRIDDMIPRICEStrategyFutureV6(IStrategy):
     emaThrLong = IntParameter(5, 55, default=24, space="buy")
     emaThrShort = IntParameter(5, 55, default=24, space="buy")
     
-    initStakeAmount = 10
-    stakeAmountPeriod = 1
+    initStakeAmount = 10 # init stake amount 
+    stakeAmountPeriod = 1 # increase amount after sameStackAmountGirds
+    sameStackAmountGirds = 20 # 20 * 0.006 = 0.12 
     
-    smallGridPercent = 0.006
-    bigGridPercent = 0.1
+    smallGridPercent = 0.001
+    bigGridPercent = 0.03 
     
-    windowSize = 30
+    windowSize = 30 # Min Max price windown
     
-    
-    Z = 1
+    Z = 1 
     LowRatio = 1
     HighRatio = 0.3
     
-    
-    sameStackAmountGirds = 20
-
 
     # Optimal timeframe for the strategy
     timeframe = '1m'
@@ -156,7 +153,6 @@ class GRIDDMIPRICEStrategyFutureV6(IStrategy):
         
         
         # ------------------ caculate first order ratio ------------------
-        
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
         last_candle = dataframe.iloc[-1].squeeze()
         
@@ -171,13 +167,13 @@ class GRIDDMIPRICEStrategyFutureV6(IStrategy):
               
         # y = kx + b
         
-        k = (self.ratioLow - self.ratioHigh) / (lowestPrice - highestPrice)
-        b = (self.rotioHigh*lowestPrice - self.ratioLow*highestPrice) / (lowestPrice - highestPrice)
+        k = (self.LowRatio - self.HighRatio) / (lowestPrice - highestPrice)
+        b = (self.HighRatio*lowestPrice - self.LowRatio*highestPrice) / (lowestPrice - highestPrice)
            
         ratio = k*current_rate + b
         
-        
-        return self.initStakeAmount * ratio
+        self.dp.send_msg(f"{pair} highest price {highestPrice} lowest price {lowestPrice} current rate {current_rate} ratio {ratio}")
+        return self.initStakeAmount 
     
     
     def order_filled(self, pair: str, trade: Trade, order: Order, current_time: datetime, **kwargs) -> None:        
@@ -199,9 +195,11 @@ class GRIDDMIPRICEStrategyFutureV6(IStrategy):
                 orderID = metadataMap['vaildOrderIDs'].pop()
                 logger.info(f"{decrease_tag} remove vaildOrderID {orderID}")
             elif stoploss_tag in order.ft_order_tag: # stoploss order
+                logger.info(f"after order_filled metadata {trade.pair}, metadataMap {metadataMap}")
                 return None
         
             trade.set_custom_data(key='GRIDMETADATAS',value=metadataMap) # store metadataMap
+            logger.info(f"after order_filled metadata {trade.pair}, metadataMap {metadataMap}")
             return None
         
         
@@ -337,14 +335,17 @@ class GRIDDMIPRICEStrategyFutureV6(IStrategy):
         
         # long trade increase postion where curPrice <= lastPrice - GridPrice
         if trade.entry_side == 'buy' : 
+            sameStakAmountLine = fistOrderPrice - smallGrid * self.sameStackAmountGirds
+            logger.info(f'current_rate{current_rate}, next_price{lastOperateOrder.safe_price - smallGrid}')
             if current_rate <= lastOperateOrder.safe_price - smallGrid:
                 try:
-                    if fistOrderPrice - smallGrid * self.sameStackAmountGirds  < current_rate <= fistOrderPrice :
+                    if sameStakAmountLine < current_rate <= fistOrderPrice :
+                        logger.info(f'current_rate{current_rate}, fistOrderPrice{fistOrderPrice}, sameStakAmountLine{sameStakAmountLine}')
                         stake_amount = firstStakeAmount
-                    elif current_rate <= fistOrderPrice - smallGrid * self.sameStackAmountGirds:
-                        priod = ((fistOrderPrice - smallGrid * self.sameStackAmountGirds) - current_rate) / smallGrid 
+                    elif current_rate <= sameStakAmountLine:
+                        priod = (sameStakAmountLine - current_rate) / smallGrid 
                         stake_amount = firstStakeAmount + self.stakeAmountPeriod * int(priod)
-                    
+                    logger.info(f'stake_amount{stake_amount}')
                     return stake_amount, f'Increase Postion, stake_amount: {stake_amount}, lastorderprice {lastOperateOrder.safe_price}, currentrate: {current_rate}, lines: {lineList}'
                 except Exception as exception:
                     return None

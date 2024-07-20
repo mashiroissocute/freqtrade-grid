@@ -144,7 +144,7 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
     def leverage(self, pair: str, current_time: datetime, current_rate: float,
                  proposed_leverage: float, max_leverage: float, entry_tag: Optional[str],
                  side: str, **kwargs) -> float:
-        return 3
+        return 10
     
     # the initial order (opening trade)
     def custom_stake_amount(self, pair: str, current_time: datetime, current_rate: float,
@@ -209,10 +209,14 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
         metadataMap['bigGrid'] = 0.0
         metadataMap['stoplossLine'] = []
         metadataMap['fistOrderPrice'] = 0.0
+        metadataMap['fistOrderStake'] = 0.0
         metadataMap['vaildOrderIDs'] = []
         
+        
         current_rate = first_order.safe_price
+        current_stake = first_order.stake_amount
         metadataMap['fistOrderPrice'] = current_rate
+        metadataMap['fistOrderStake'] = current_stake
        
         # init small price grid
         metadataMap['smallGrid'] = current_rate*self.smallGridPercent
@@ -249,7 +253,7 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
                               ) -> Union[Optional[float], Tuple[Optional[float], Optional[str]]]:
     # --------------- read and check metadata -----------------
         metadataMap = trade.get_custom_data(key='GRIDMETADATAS')
-        logger.info(f"read metadata {trade.pair}, metadataMap {metadataMap}")
+        # logger.info(f"read metadata {trade.pair}, metadataMap {metadataMap}")
         
         stoplossLine = metadataMap['stoplossLine']
         if len(stoplossLine) != 3 :
@@ -259,6 +263,11 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
         fistOrderPrice = metadataMap['fistOrderPrice']
         if fistOrderPrice == 0 :
             logger.error(f"{trade.pair} fistOrderPrice is 0")
+            return None
+        
+        fistOrderStake = metadataMap['fistOrderStake']
+        if fistOrderStake == 0 :
+            logger.error(f"{trade.pair} fistOrderStake is 0")
             return None
 
         smallGrid = metadataMap['smallGrid']
@@ -333,10 +342,7 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
         if lastOperateOrder == None:
             logger.error(f"{trade.pair} lastOperateOrder is None")
             return None
-
-        filledEntries = trade.select_filled_orders(trade.entry_side)
-        firstStakeAmount = filledEntries[0].stake_amount
-
+        firstStakeAmount = fistOrderStake
         # long trade increase postion where curPrice <= lastPrice - GridPrice
         if trade.entry_side == 'buy' : 
             sameStakAmountLine = fistOrderPrice - smallGrid * self.sameStackAmountGirds
@@ -375,7 +381,7 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
             return None
         
         if trade.entry_side == 'buy' : 
-            if current_rate >= lastValidOrder.safe_price + 5*smallGrid:
+            if current_rate >= lastValidOrder.safe_price + smallGrid:
                 try:
                     return -lastValidOrder.safe_amount, f'Decrease Postion, oppsite order price: {lastValidOrder.safe_price} amount: {lastValidOrder.safe_amount}'
                 except Exception as exception:
