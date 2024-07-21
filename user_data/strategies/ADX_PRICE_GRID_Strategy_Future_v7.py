@@ -49,17 +49,13 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
         'exit': 'GTC'
     }
 
-    adxWindow = IntParameter(7, 21, default=24, space="buy")
-    adxThr = IntParameter(15, 35, default=25, space="buy")
-    emaThrLong = IntParameter(5, 55, default=24, space="buy")
-    emaThrShort = IntParameter(5, 55, default=24, space="buy")
     
     initStakeAmount = 10 # init stake amount 
     stakeAmountPeriod = 1 # increase amount after sameStackAmountGirds
     sameStackAmountGirds = 20 # 20 * 0.006 = 0.12 add stackamount after 12%
     
     smallGridPercent = 0.006 
-    bigGridPercent = 0.03 # used in stoploss , stoploss after 15%
+    bigGridPercent = 0.03 # used in stoploss , stoploss after 30%   10 * bigGridPercent
 
 
     windowSize = 30 # Min Max price windown
@@ -85,12 +81,7 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
     
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        adxWindow = self.adxWindow.value
         informative = self.dp.get_pair_dataframe(pair=metadata['pair'], timeframe=self.inf_tf)
-        informative['plus_di'] = ta.PLUS_DI(informative,adxWindow)
-        informative['minus_di'] = ta.MINUS_DI(informative,adxWindow)
-        informative['emaLong'] = ta.EMA(informative, timeperiod=self.emaThrLong.value)
-        informative['emaShort'] = ta.EMA(informative, timeperiod=self.emaThrShort.value)
         informative['lowestPrice'] = informative['low'].rolling(window=self.windowSize).min()
         informative['highestPrice'] = informative['high'].rolling(window=self.windowSize).max()
         
@@ -106,18 +97,12 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
         """
         dataframe.loc[
             (
-                # (dataframe['close'] < dataframe[f'emaLong_{self.inf_tf}'])
-                # & 
-                # (dataframe[f'plus_di_{self.inf_tf}'] > dataframe[f'minus_di_{self.inf_tf}']) & (dataframe[f'plus_di_{self.inf_tf}']>self.adxThr.value)
                 (dataframe['close'] > 0)
             ),
             'enter_long'] = 1
         
         dataframe.loc[
             (
-                # (dataframe['close'] > dataframe[f'emaShort_{self.inf_tf}'])
-                # & 
-                # (dataframe[f'plus_di_{self.inf_tf}'] < dataframe[f'minus_di_{self.inf_tf}']) & (dataframe[f'minus_di_{self.inf_tf}']>self.adxThr.value)
                 (dataframe['close'] < 0)
             ),
             'enter_short'] = 1
@@ -151,7 +136,8 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
                             proposed_stake: float, min_stake: Optional[float], max_stake: float,
                             leverage: float, entry_tag: Optional[str], side: str,
                             **kwargs) -> float:
-        # ------------------ caculate first order ratio ------------------
+
+    # ------------------ caculate first order ratio ------------------
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
         last_candle = dataframe.iloc[-1].squeeze()
         
@@ -171,7 +157,7 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
            
         ratio = k*current_rate + b
         
-        self.dp.send_msg(f"{pair} highest price {highestPrice} lowest price {lowestPrice} current rate {current_rate} ratio {ratio}")
+        logger.info(f"{pair} highest-{highestPrice} lowest-{lowestPrice} current-{current_rate} ratio-{ratio}")
         return self.initStakeAmount * ratio
     
     
@@ -189,10 +175,10 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
             
             if increase_tag in order.ft_order_tag: # increase order
                 metadataMap['vaildOrderIDs'].append(order.order_id)
-                logger.info(f"{increase_tag} append vaildOrderID {order.order_id}")
+                logger.info(f"{pair} {increase_tag} append vaildOrderID {order.order_id}")
             elif decrease_tag in order.ft_order_tag: # decrease order
                 orderID = metadataMap['vaildOrderIDs'].pop()
-                logger.info(f"{decrease_tag} remove vaildOrderID {orderID}")
+                logger.info(f"{pair} {decrease_tag} remove vaildOrderID {orderID}")
             elif stoploss_tag in order.ft_order_tag: # stoploss order
                 logger.info(f"after order_filled metadata {trade.pair}, metadataMap {metadataMap}")
                 return None
@@ -228,9 +214,9 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
         
         # init line        
         if trade.entry_side == "buy" :
-            metadataMap['stoplossLine'] = [current_rate, current_rate-1*metadataMap['bigGrid'], current_rate-5*metadataMap['bigGrid']]
+            metadataMap['stoplossLine'] = [current_rate, current_rate-1*metadataMap['bigGrid'], current_rate-10*metadataMap['bigGrid']]
         elif trade.entry_side == "sell" :
-            metadataMap['stoplossLine'] = [current_rate, current_rate+1*metadataMap['bigGrid'], current_rate+5*metadataMap['bigGrid']]
+            metadataMap['stoplossLine'] = [current_rate, current_rate+1*metadataMap['bigGrid'], current_rate+10*metadataMap['bigGrid']]
 
         
         
@@ -302,40 +288,16 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
                     to_stoplossamount += order.safe_amount
                     to_stoplossstakeamount += order.safe_cost
                     to_stoplossorderids.append(order.order_id)
-                # change line and stackAmount after stoploss
-                metadataMap['stoplossLine'] = [stoplossEndLine, stoplossEndLine-1*bigGrid, stoplossEndLine-5*bigGrid]
-                metadataMap['stakeAmountList'] = [stoplossNextGridStackAmount, stoplossNextGridStackAmount+1*self.stakeAmountPeriod, stoplossNextGridStackAmount+2*self.stakeAmountPeriod]
-                logger.info(f"Stoploss Postion remove vaildOrderID {to_stoplossorderids}")
+                # change stoplossLine and validOrderIDs after stoploss
+                metadataMap['stoplossLine'] = [stoplossEndLine, stoplossEndLine-1*bigGrid, stoplossEndLine-10*bigGrid]
                 metadataMap['vaildOrderIDs'] = removeStoplossOrderIDs(metadataMap['vaildOrderIDs'],to_stoplossorderids)
                 trade.set_custom_data(key='GRIDMETADATAS',value=metadataMap)
+                logger.info(f"{pair} Stoploss Postion remove vaildOrderIDs {to_stoplossorderids}")
                 try:
                     return -to_stoplossamount, f'Stoploss Postion, stoplossamount: {to_stoplossamount} loss: -{to_stoplossstakeamount - to_stoplossamount*current_rate}'
                 except Exception as exception:
                     return None
                 
-                
-        if trade.entry_side == 'sell' : 
-            if current_rate > stoplossTriggerLine:
-                # calculate stoploss amount
-                to_stoplossorders = find_valid_sellorders_betweenline(trade, vaildOrderIDs, stoplossStartLine, stoplossEndLine) # stoplossStartLine is downline when short
-                to_stoplossamount = 0
-                to_stoplossstakeamount = 0
-                to_stoplossorderids = []
-                for order in to_stoplossorders:
-                    to_stoplossamount += order.safe_amount
-                    to_stoplossstakeamount += order.safe_cost
-                    to_stoplossorderids.append(order.order_id)
-                # change line and stackAmount after stoploss
-                metadataMap['stoplossLine'] = [stoplossEndLine, stoplossEndLine+1*bigGrid, stoplossEndLine+5*bigGrid]
-                logger.info(f"Stoploss Postion remove vaildOrderID {to_stoplossorderids}")
-                metadataMap['vaildOrderIDs'] = removeStoplossOrderIDs(metadataMap['vaildOrderIDs'],to_stoplossorderids)
-                trade.set_custom_data(key='GRIDMETADATAS',value=metadataMap)
-                try:
-                    return -to_stoplossamount, f'Stoploss Postion, stoplossamount: {to_stoplossamount} loss: {to_stoplossstakeamount - to_stoplossamount*current_rate}'
-                except Exception as exception:
-                    return None
-                
-
         
     # ---------------- GRID increse position ---------------   
         lastOperateOrder = find_last_operate_order(trade)
@@ -343,6 +305,7 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
             logger.error(f"{trade.pair} lastOperateOrder is None")
             return None
         firstStakeAmount = fistOrderStake
+        increaseStackAmountRation = firstStakeAmount / self.initStakeAmount
         # long trade increase postion where curPrice <= lastPrice - GridPrice
         if trade.entry_side == 'buy' : 
             sameStakAmountLine = fistOrderPrice - smallGrid * self.sameStackAmountGirds
@@ -352,26 +315,12 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
                         stake_amount = firstStakeAmount
                     elif current_rate <= sameStakAmountLine:
                         priod = (sameStakAmountLine - current_rate) / smallGrid 
-                        stake_amount = firstStakeAmount + self.stakeAmountPeriod * int(priod)
+                        stake_amount = firstStakeAmount + self.stakeAmountPeriod * int(priod) * increaseStackAmountRation
+                    logger.info(f'{trade.pair} Increase Postion, stake_amount: {stake_amount}, lastorderprice {lastOperateOrder.safe_price}, currentrate: {current_rate}')
                     return stake_amount, f'Increase Postion, stake_amount: {stake_amount}, lastorderprice {lastOperateOrder.safe_price}, currentrate: {current_rate}'
                 except Exception as exception:
                     return None
-                
-        # short trade increase postion where curPrice >= lastPrice + GridPrice
-        if trade.entry_side == 'sell' : 
-            if current_rate >= lastOperateOrder.safe_price + smallGrid:
-                try:
-                    if fistOrderPrice + smallGrid * self.sameStackAmountGirds  > current_rate >= fistOrderPrice :
-                        stake_amount = firstStakeAmount
-                    elif current_rate >= fistOrderPrice - smallGrid * self.sameStackAmountGirds:
-                        priod = (current_rate- (fistOrderPrice - smallGrid * self.sameStackAmountGirds)) / smallGrid 
-                        stake_amount = firstStakeAmount + self.stakeAmountPeriod * int(priod)
-                        
-                    return stake_amount, f'Increase Postion, stake_amount: {stake_amount}, lastorderprice {lastOperateOrder.safe_price}, currentrate: {current_rate}'
-                except Exception as exception:
-                    return None
-        
-        
+                    
         
     # ---------------- GRID decrease position --------------
         # long trade decrese postion where curPrice >= lastPrice + GridPrice
@@ -383,19 +332,11 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
         if trade.entry_side == 'buy' : 
             if current_rate >= lastValidOrder.safe_price + smallGrid:
                 try:
-                    return -lastValidOrder.safe_amount, f'Decrease Postion, oppsite order price: {lastValidOrder.safe_price} amount: {lastValidOrder.safe_amount}'
+                    logger.info(f'{trade.pair} Decrease Postion, amount: {lastValidOrder.safe_amount}, oppsiteorderprice {lastValidOrder.safe_price}, currentrate: {current_rate}')
+                    return -lastValidOrder.safe_amount, f' Decrease Postion, amount: {lastValidOrder.safe_amount}, oppsiteorderprice {lastValidOrder.safe_price}, currentrate: {current_rate}'
                 except Exception as exception:
                     return None
-                
-                
-        # short trade decrease postion where curPrice <= lastPrice - GridPrice
-        if trade.entry_side == 'sell' : 
-            if current_rate <= lastValidOrder.safe_price - smallGrid:
-                try:
-                    return -lastValidOrder.safe_amount, f'Decrease Postion, oppsite order price: {lastValidOrder.safe_price} amount: {lastValidOrder.safe_amount}'
-                except Exception as exception:
-                    return None
-                
+
         return None
 
 
