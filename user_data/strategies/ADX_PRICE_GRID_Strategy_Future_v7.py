@@ -52,10 +52,10 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
     
     initStakeAmount = 10 # init stake amount 
     stakeAmountPeriod = 1 # increase amount after sameStackAmountGirds
-    sameStackAmountGirds = 20 # 20 * 0.006 = 0.12 add stackamount after 12%
+    sameStackAmountGirds = 5 # 20 * 0.006 = 0.12 add stackamount after 12%
     
-    smallGridPercent = 0.006 
-    bigGridPercent = 0.03 # used in stoploss , stoploss after 30%   10 * bigGridPercent
+    smallGridPercent = 0.001
+    bigGridPercent = 0.01 # used in stoploss , stoploss after 30%   10 * bigGridPercent
 
 
     windowSize = 30 # Min Max price windown
@@ -292,7 +292,7 @@ class GRIDDMIPRICEStrategyFutureV7(IStrategy):
                 metadataMap['stoplossLine'] = [stoplossEndLine, stoplossEndLine-1*bigGrid, stoplossEndLine-10*bigGrid]
                 metadataMap['vaildOrderIDs'] = removeStoplossOrderIDs(metadataMap['vaildOrderIDs'],to_stoplossorderids)
                 trade.set_custom_data(key='GRIDMETADATAS',value=metadataMap)
-                logger.info(f"{pair} Stoploss Postion remove vaildOrderIDs {to_stoplossorderids}")
+                logger.info(f"{trade.pair} Stoploss Postion remove vaildOrderIDs {to_stoplossorderids}")
                 try:
                     return -to_stoplossamount, f'Stoploss Postion, stoplossamount: {to_stoplossamount} loss: -{to_stoplossstakeamount - to_stoplossamount*current_rate}'
                 except Exception as exception:
