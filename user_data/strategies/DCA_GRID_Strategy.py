@@ -41,22 +41,22 @@ class DCAGRID(IStrategy):
     
     
     minimal_roi = {
-        "0": 3
+        "0": 1
     }
-    stoploss =  -1
+    stoploss =  -0.99
     trailing_stop = True
-    trailing_stop_positive = 0.05
-    trailing_stop_positive_offset = 0.25
+    trailing_stop_positive = 0.02
+    trailing_stop_positive_offset = 0.05
     trailing_only_offset_is_reached = True
 
     
-    Mode = 'DCA' # 'DCA' or 'GRID'
+    Mode = 'GIRD' # 'DCA' or 'GRID'
     
-    initStakeAmount = 10
-    stakeAmountPeriod = 5
+    initStakeAmount = 50
+    stakeAmountPeriod = 0
     
-    smallGridPercent = 0.01
-    bigGridPercent = 0.05
+    smallGridPercent = 0.02
+    bigGridPercent = 0.1
 
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
@@ -76,11 +76,6 @@ class DCAGRID(IStrategy):
             ),
             'exit_long'] = 0
         return dataframe
-    
-    def leverage(self, pair: str, current_time: datetime, current_rate: float,
-                 proposed_leverage: float, max_leverage: float, entry_tag: Optional[str],
-                 side: str, **kwargs) -> float:
-        return 3
     
     # the initial order (opening trade)
     def custom_stake_amount(self, pair: str, current_time: datetime, current_rate: float,
