@@ -177,7 +177,7 @@ class DCAGRID(IStrategy):
                 try:
                     priod = (firstOrderPrice - current_rate) / bigGrid 
                     stake_amount = self.initStakeAmount + self.stakeAmountPeriod * int(priod)
-                    return stake_amount, f'Increase Postion, stake_amount: {stake_amount}, lastorderprice {lastOperateOrder.safe_price}, currentrate: {current_rate}, lines: {lineList}'
+                    return stake_amount, f'Increase Postion, stake_amount: {stake_amount}, lastorderprice {lastOperateOrder.safe_price}, currentrate: {current_rate}'
                 except Exception as exception:
                     return None
                 
